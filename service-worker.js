@@ -1,52 +1,88 @@
-// Service Worker for handling background notifications
-self.addEventListener('install', (event) => {
-    self.skipWaiting();
+// Service Worker for handling background notifications and offline support
+const CACHE_NAME = 'pebbleway-v1';
+const urlsToCache = [
+  '/ChallengeIt/',
+  '/ChallengeIt/index.html',
+  '/ChallengeIt/manifest.json',
+  '/ChallengeIt/icons/icon-180x180.png',
+  '/ChallengeIt/icons/icon-192x192.png',
+  '/ChallengeIt/icons/icon-512x512.png',
+  '/ChallengeIt/css/styles.css',
+  '/ChallengeIt/js/app.js'
+];
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(urlsToCache))
+  );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((cacheNames) => {
+            return Promise.all(
+                cacheNames.map((cacheName) => {
+                    if (cacheName !== CACHE_NAME) {
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+        })
+    );
     event.waitUntil(clients.claim());
 });
 
-self.addEventListener('push', (event) => {
-    const options = {
-        body: event.data.text(),
-        icon: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="%23FFB6C1"/><circle cx="35" cy="40" r="5" fill="%23000"/><circle cx="65" cy="40" r="5" fill="%23000"/><path d="M30 60 Q50 70 70 60" stroke="%23000" fill="none" stroke-width="2"/></svg>',
-        badge: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="%23FFB6C1"/></svg>',
-        vibrate: [100, 50, 100],
-        data: {
-            dateOfArrival: Date.now(),
-            primaryKey: 1
-        },
-        actions: [
-            {
-                action: 'check',
-                title: 'Check In Now'
-            },
-            {
-                action: 'close',
-                title: 'Close'
-            }
-        ]
-    };
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        if (response) {
+          return response;
+        }
+        return fetch(event.request);
+      })
+  );
+});
 
-    event.waitUntil(
-        self.registration.showNotification('Goal Reminder', options)
-    );
+self.addEventListener('push', event => {
+  const options = {
+    body: event.data.text(),
+    icon: '/ChallengeIt/icons/icon-192x192.png',
+    badge: '/ChallengeIt/icons/icon-180x180.png',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: 1
+    },
+    actions: [
+      {
+        action: 'explore',
+        title: 'View Goals',
+        icon: '/ChallengeIt/icons/icon-180x180.png'
+      }
+    ]
+  };
+
+  event.waitUntil(
+    self.registration.showNotification('PebbleWay', options)
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
-    if (event.action === 'check') {
+    if (event.action === 'explore') {
         event.waitUntil(
             clients.matchAll({ type: 'window' }).then((clientList) => {
                 for (const client of clientList) {
-                    if (client.url === '/' && 'focus' in client) {
+                    if (client.url === '/ChallengeIt/' && 'focus' in client) {
                         return client.focus();
                     }
                 }
                 if (clients.openWindow) {
-                    return clients.openWindow('/');
+                    return clients.openWindow('/ChallengeIt/');
                 }
             })
         );
